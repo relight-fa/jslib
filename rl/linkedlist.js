@@ -29,7 +29,7 @@ Object.defineProperties($.LinkedListNode.prototype, {
     get: function() { return this._list; }
   },
   /*
-   * ノードに設定されているリスト
+   * ノードに設定されている値
    */
   "value": {
     get: function() { return this._value; },
@@ -50,6 +50,19 @@ Object.defineProperties($.LinkedListNode.prototype, {
     get: function() { return this._previous; }
   }
 });
+
+/**
+ * 先頭のノードであるか
+ */
+$.LinkedListNode.prototype.isFirst = function() {
+  return this._previous == null;
+};
+/**
+ * 末尾のノードであるか
+ */
+$.LinkedListNode.prototype.isLast = function() {
+  return this._next == null;
+};
 
 //------------------------------------------------------------
 
@@ -151,7 +164,7 @@ $.LinkedList.prototype.addNodeLast = function(node){
   node._next = null;
   node._previous = this._last;
   
-  //前ノードの更新
+  // 旧末尾ノードの更新
   if (this._first == null) {
     this._first = node;
   }
@@ -188,6 +201,7 @@ $.LinkedList.prototype.addValueFirst = function(value){
 
 /**
  * 指定したノードを先頭に追加する
+ * ノードが既にリスト内に存在する場合は先頭に移動させる.
  * @param {$.LinkedListNode} node 追加するノード
  */
 $.LinkedList.prototype.addNodeFirst = function(node){
@@ -214,7 +228,6 @@ $.LinkedList.prototype.addNodeFirst = function(node){
     else {
       node._next._previous = node._previous;
     }
-    
     node._previous._next = node._next;
   }
   else {
@@ -225,7 +238,7 @@ $.LinkedList.prototype.addNodeFirst = function(node){
   node._previous = null;
   node._next = this._first;
   
-  //前ノードの更新
+  //旧ノードの更新
   if (this._last == null) {
     this._last = node;
   }
@@ -236,13 +249,18 @@ $.LinkedList.prototype.addNodeFirst = function(node){
 };
 
 /**
- * 指定した値を持つノードを作成し、指定したノードの後ろに追加する 
+ * 指定した値を持つノードを作成し、指定したノードの後ろに追加する
+ * node が null の場合、先頭に追加する. 
  * @param {Object} value 追加する値
  * @param {$.LinkedListNode} node 追加先となるノード
  * @returns {$.LinkedListNode} 新規に作成されたノード
  */
 $.LinkedList.prototype.addValueAfter = function(value, node){
-  if (node == null || node._list != this){
+  if (node == null) {
+    this.addValueFirst(value);
+    return;
+  }
+  if (node._list != this){
     return null;
   }
   
@@ -253,13 +271,11 @@ $.LinkedList.prototype.addValueAfter = function(value, node){
   newNode._next = node._next;
   
   //update next node
-  if (newNode._next != null)
-  {
+  if (newNode._next != null) {
     newNode._next._previous = newNode;
   }
   //when next node is null, update last node.
-  else
-  {
+  else {
     this._last = newNode;
   }
   
@@ -273,12 +289,17 @@ $.LinkedList.prototype.addValueAfter = function(value, node){
 /**
  * addNodeAfter 
  * add aNode after bNode.
- * if aNode is already contained by list, move aNode after bNode.
+ * if aNode is already contained by this list, move aNode after bNode.
+ * if bNode is null, move aNode to first of this list.
  * @param {$.LinkedListNode} value
  * @param {$.LinkedListNode} node
  */
 $.LinkedList.prototype.addNodeAfter = function(aNode, bNode){
-  if (aNode == null || bNode == null || bNode._list != this){
+  if (bNode == null) {
+    this.addNodeFirst(aNode);
+    return;
+  }
+  if (aNode == null || bNode._list != this){
     return;
   }
   if (aNode._previous == bNode) {
@@ -326,13 +347,18 @@ $.LinkedList.prototype.addNodeAfter = function(aNode, bNode){
 }; 
 
 /**
- * addValueBefore 
+ * create new Node from value, then add it before node.
+ * if node is null, add new node to last. 
  * @param {Object} value
  * @param {$.LinkedListNode} node
  * @returns {$.LinkedListNode} new node
  */
 $.LinkedList.prototype.addValueBefore = function(value, node){
-  if (node == null || node._list != this){
+  if (node == null) {
+    this.addValueLast(value);
+    return;
+  }
+  if (node._list != this){
     return null;
   }
   
@@ -340,37 +366,48 @@ $.LinkedList.prototype.addValueBefore = function(value, node){
   var newNode = new $.LinkedListNode(value);
   newNode._list = this;
   newNode._next = node;
-  newNode._previous = node._previous;
   
-  //update previous node
-  if (newNode._previous != null)
-  {
-    newNode._previous._next = newNode;
+  // if node is null, add newNode to last.
+  if (node != null) {
+    newNode._previous = this._last;
+    this._last._next = newNode;
+    this._last = newNode;
   }
-  //when previous node is null, update first node.
-  else
-  {
-    this._first = newNode;
+  else {
+    newNode._previous = node._previous;
+    
+    //update previous node
+    if (newNode._previous != null) {
+      newNode._previous._next = newNode;
+    }
+    //when previous node is null, update first node.
+    else {
+      this._first = newNode;
+    }
+    //update next node
+    node._previous = newNode;
   }
-  
-  //update next node
-  node._previous = newNode;
   
   this._count++;
   return newNode;
 }; 
 
 /**
- * addNodeBefore 
  * add aNode before bNode.
  * if aNode is already contained by list, move aNode before bNode.
+ * if bNode is null, add(or move) aNode to last.
  * @param {$.LinkedListNode} value
  * @param {$.LinkedListNode} node
  */
-$.LinkedList.prototype.addNodeBefore = function(aNode, bNode){
-  if (aNode == null || bNode == null || bNode._list != this){
+$.LinkedList.prototype.addNodeBefore = function(aNode, bNode) {
+  if (bNode == null) {
+    this.addNodeLast(aNode);
     return;
   }
+  if (aNode == null || bNode._list != this){
+    return;
+  }
+  
   if (aNode._next == bNode) {
     return;
   }
@@ -416,6 +453,62 @@ $.LinkedList.prototype.addNodeBefore = function(aNode, bNode){
 };
 
 /**
+ * ノードをリストの先頭に移動する
+ */
+$.LinkedList.prototype.moveNodeFirst = function(aNode) {
+  if (aNode._list != this) {
+    return;
+  }
+  // 既に先頭だったら処理しない
+  if (aNode._previous == null) {
+    return;
+  }
+  
+  //nodeの前後ノードをリンク
+  aNode._previous._next = aNode._next;
+  if (aNode._next == null) {
+    this._last = aNode._previous;
+  }
+  else {
+    aNode._next._previous = aNode._previous;
+  }
+  
+  //既存の先頭のノードとaNodeをリンク
+  this._first._previous = aNode;
+  aNode._next = this._first;
+  aNode._previous = null;
+  this._first = aNode;
+};
+
+/**
+ * ノードをリストの末尾に移動する
+ */
+$.LinkedList.prototype.moveNodeLast = function(aNode) {
+  if (aNode._list != this) {
+    return;
+  }
+  // 既に先頭だったら処理しない
+  if (aNode._next == null) {
+    return;
+  }
+  
+  //nodeの前後ノードをリンク
+  aNode._next._previous = aNode._previous;
+  if (aNode._previous == null) {
+    this._first = aNode._next;
+  }
+  else {
+    aNode._previous._next = aNode._next;
+  }
+  
+  //既存の末尾のノードとaNodeをリンク
+  this._last._next = aNode;
+  aNode._previous = this._last;
+  aNode._next = null;
+  this._last = aNode;
+};
+
+/**
  * removeValue
  * @param {Object} value
  * @returns {LinkedListNode} removed node.
@@ -440,12 +533,12 @@ $.LinkedList.prototype.removeValue = function(value) {
  * @param {$.LinkedListNode} node
  */
 $.LinkedList.prototype.removeNode = function(node) {
-  //check node
+  // check node
   if (node == null || node._list != this) {
     return;
   }
   
-  //update previous of node
+  // update previous of node
   if (node._previous == null) {
     this._first = node._next;
   }
@@ -453,7 +546,7 @@ $.LinkedList.prototype.removeNode = function(node) {
     node._previous._next = node._next;
   }
   
-  //update next of node
+  // update next of node
   if (node._next == null) {
     this._last = node._previous;
   }
@@ -620,6 +713,34 @@ $.LinkedList.prototype.moveNodeFirstInSort = function(node) {
 }; 
 
 /**
+ * ノードを指定した条件が満たすまで前方(インデックスの増加方向)に移動させる
+ * @param node 移動させるノード
+ * @param func 第1引数に移動対象のnode, nodeの1つ前方のノードが渡される関数.
+ *             この返り値がtrueになるまで、ノードを前方に移動する.
+ */
+$.LinkedList.prototype.moveNodeForwardUntil = function(node, func) {
+  compareNode = node._next;
+  while (compareNode != null && func(node, compareNode) === false) {
+    compareNode = compareNode._next;
+  }
+  this.addNodeBefore(node, compareNode);
+};
+
+/**
+ * ノードを指定した条件が満たすまで後方(インデックスの減少方向)に移動させる
+ * @param node 移動させるノード
+ * @param func 第1引数に移動対象のnode, nodeの1つ後方のノードが渡される関数.
+ *             この返り値がtrueになるまで、ノードを後方に移動する.
+ */
+$.LinkedList.prototype.moveNodeBackwardUntil = function(node, func) {
+  compareNode = node._previous;
+  while (compareNode != null && func(node, compareNode) === false) {
+    compareNode = compareNode._previous;
+  }
+  this.addNodeAfter(node, compareNode);
+};
+
+/**
  * dump
  */
 $.LinkedList.prototype.dump = function() {
@@ -633,9 +754,10 @@ $.LinkedList.prototype.dump = function() {
     str += "[" + index + "] =>" +target.value.toString() + "\n";
     index++;
   }
+  return str;
 };
 
-}());
+});
 
 
 

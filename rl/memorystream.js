@@ -1,9 +1,50 @@
 /**
  * rl_memorystream.js
- * (C) 2014-2017 Daichi Aihara
+ * (C) 2014-2016 Daichi Aihara
  * licensed under the MIT license
  * 
  * メモリ内容を読み書きするための容量拡張可能なストリーム
+ * 
+ * usage:
+ *  // 1) write
+ *  
+ *  // 初期容量を 128 バイトとしてストリームの作成
+ *  // 容量とはデータを書き込むための確保領域であり
+ *  // 作成時点でストリームの内容は空である.
+ *  // また、容量はストリームの書き込みに応じて自動的に拡張される.
+ *  var stream = new RL.MemoryStream(128);
+ *  
+ *  // streamのバイトオーダーを指定する
+ *  // isLittleEndian プロパティに true を渡せばリトルエンディアンとして
+ *  // false を渡せばビッグエンディアンとして扱う.
+ *  // 初期値は false
+ *  stream.isLittleEndian = true
+ *  
+ *  // 各種 整数値型の書き込み
+ *  stream.writeUint8(255);
+ *  stream.writeint16(-1234);
+ *  
+ *  // JS文字列をUTF-8文字列にエンコードして書き込み
+ *  // 先頭4byteに文字列のバイト長が書き込まれる.
+ *  stream.writeStringAsUTF8("Hello World!");
+ *  
+ *  // ストリームの内容をBase64文字列として取得
+ * base64 = stream.encodeToBase64();
+ * // -> "//suAAAADEhlbGxvIFdvcmxkIQ=="
+ *  
+ *  
+ *  // 2) read
+ *  // Base64エンコードされた文字列からストリームを作成
+ *  var stream = RL.MemoryStream("//suAAAADEhlbGxvIFdvcmxkIQ==");
+ *  
+ *  // 各種 整数値型の読み込み
+ *  var uint8Value = stream.readUint8(); // -> 255
+ *  var int16Value = stream.readInt16(); // -> -1234
+ *  
+ *  // UTF-8エンコード文字列の読み込み
+ *  // 引数に整数値を渡すと、その分ストリームを読み込みJS文字列にデコードする.
+ *  // 引数が空の場合は、先頭32bitを整数値として読み込み文字列のバイト長とする
+ *  var strValue = stream.readStringAsUTF(); // -> "Hello World!";
  */
 
 //declare namespace
@@ -27,12 +68,20 @@ $.SEEK_END     = 2;
 // --------------------------------------------------
 
 /**
- * 実行環境がリトルエンディアンか
+ * 実行環境がリトルエンディアンかを表す定数
  */
 $.IS_LITTLE_ENDIAN = (function() {
+  // 値が 1 である 32bit 整数値 arr32 を作成する.
+  // 実行環境がリトルエンディアンならば
+  // arr32 は 01 00 00 00 というバイト列であり
+  // ビッグエンディアンならば
+  // 00 00 00 01 というバイト列となる.
   var arr32 = new Uint32Array(1);
-  var arr8 = new Uint8Array(arr32.buffer);
   arr32[0] = 1;
+  
+  // したがって 1バイト目の値を調べれば
+  // リトルエンディアン環境か取得できる.
+  var arr8 = new Uint8Array(arr32.buffer);
   if (arr8[0] == 1) {
     return true;
   }
@@ -45,26 +94,30 @@ $.IS_LITTLE_ENDIAN = (function() {
  * MemoryStream Class 
  * 
  * Overloads
- *   $.MemoryStream $.MemoryStream();
+ *   $.MemoryStream();
  *   デフォルトの初期容量を持つ空のストリームを作成します.
- * 
- *   $.MemoryStream $.MemoryStream(int capacity);
+ *   
+ *   $.MemoryStream(int capacity);
  *   指定した初期容量を持つ空のストリームを作成します.
  *   @param {int} capacity
  *  
- *   $.MemoryStream $.MemoryStream(string base64Str);
+ *   $.MemoryStream(string base64Str);
  *   Base 64形式の文字列をデコードしたストリームを作成します.
  *   @param {string} base64Str
  * 
- *   $.MemoryStream $.MemoryStream(ArrayBuffer buffer, bool copyData = false);
+ *   $.MemoryStream(ArrayBuffer buffer, bool copyData = false);
  *   指定したArrayBufferを基にしたストリームを作成します.
  *   @param {ArrayBuffer} buffer
- *   @param {bool} copyData falseが渡された場合bufferを対象としたストリームを作成します.trueが渡された場合bufferを複製したものを対象としたストリームを作成します.
+ *   @param {bool} copyData
+ *     falseが渡された場合bufferを対象としたストリームを作成します.
+ *     trueが渡された場合bufferを複製したものを対象としたストリームを作成します.
  *
- *   $.MemoryStream $.MemoryStream(TypedArray array, bool copyData = false);
+ *   $.MemoryStream(TypedArray array, bool copyData = false);
  *   指定したTypedArrayを基にしたストリームを作成します.
  *   @param {TypedArray} array
- *   @param {bool} copyData falseが渡された場合arrayを対象としたストリームを作成します.trueが渡された場合arrayを複製したものを対象としたストリームを作成します.
+ *   @param {bool} copyData
+ *     falseが渡された場合arrayを対象としたストリームを作成します.
+ *     trueが渡された場合arrayを複製したものを対象としたストリームを作成します.
  */
 $.MemoryStream = function(arg, copyData) {
   // 初期容量指定による初期化
@@ -155,18 +208,19 @@ Object.defineProperties($.MemoryStream.prototype, {
   /**
    * isLittleEndian
    * バイトオーダーをリトルエンディアンとして扱うか
+   * 初期値は true
    */
   "isLittleEndian" : {
     get : function() { return this._isLittleEndian; },
     set : function(value) {
-    this._isLittleEndian = !!value;
+      this._isLittleEndian = !!value;
     },
   },
 });
 
 /**
  * fromASCIIString
- * ASCII文字列からMemoryStreamを作成
+ * ASCII文字(文字コード0-127)からなる文字列からMemoryStreamを作成
  * @param {String} str ASCII文字列(文字コード0-127)
  */
 $.MemoryStream.fromASCIIString = function(str) {
@@ -192,11 +246,10 @@ $.MemoryStream.fromASCIIString = function(str) {
 };
 
 /**
- * fromBase64String
  * Base64文字列からMemoryStreamを作成
  * @param {String} str Base64形式の文字列
  */
-$.MemoryStream.fromBase64String = function(str) {
+$.MemoryStream.fromBase64 = function(str) {
   try {
     return new $.MemoryStream(str);
   }
@@ -206,9 +259,10 @@ $.MemoryStream.fromBase64String = function(str) {
 };
 
 /**
- * extend
  * メモリ容量の拡大
- * @param {int} newCapacity 拡大後の容量をbyte単位で指定する.現在の容量以下の値が指定された場合このメソッドは何も行わない.
+ * @param {int} newCapacity
+ *   拡大後の容量をbyte単位で指定する.
+ *   現在の容量以下の値が指定された場合このメソッドは何も行わない.
  */
 $.MemoryStream.prototype.extend = function(newCapacity) {
   newCapacity = newCapacity | 0;
@@ -224,7 +278,6 @@ $.MemoryStream.prototype.extend = function(newCapacity) {
 };
 
 /**
- * save
  * ストリームの内容を保存(ダウンロード)する (window)
  */
 $.MemoryStream.prototype.save = function(fileName, mimeType) {
@@ -243,18 +296,20 @@ $.MemoryStream.prototype.save = function(fileName, mimeType) {
 };
 
 /**
- * encodeBase64
  * ストリームの内容をbase64形式にエンコードする.
  */
-$.MemoryStream.prototype.encodeBase64 = function() {
-  return $.encodeBase64(this.data);
+$.MemoryStream.prototype.encodeToBase64 = function() {
+  return $.encodeToBase64(this.data);
 };
 
 /** 
  * seek
  * ストリームの現在位置を変更する.
  * param {Number} offset 新しいストリーム位置をoriginからの相対位置で指定する.
- * param {Number} origin 位置指定の基準となる点。$.SEEK_BEGIN, $.SEEK_CURRENT, $.SEEK_ENDから指定する.
+ * param {Number} origin
+ *   位置指定の基準となる位置.
+ *   $.SEEK_BEGIN, $.SEEK_CURRENT, $.SEEK_ENDから指定し
+ *   それぞれストリームの先頭、現在の参照位置、末尾を指す.
  */
 $.MemoryStream.prototype.seek = function(offset, origin) {
   var newPosition;
@@ -287,12 +342,16 @@ $.MemoryStream.prototype.isEndOfStream = function() {
   return this._position >= this._length;
 };
 
+// --------------------------------------------------
+// Reading
+// --------------------------------------------------
+
 /**
  * readInt8
  * 現在のストリーム位置から8bit符号付き整数として読み込み、その分ストリーム位置を進める.
  */
 $.MemoryStream.prototype.readInt8 = function() {
-  var value = this._dataView.getUint8(this._position);
+  var value = this._dataView.getInt8(this._position);
      
   this._position += 1;
   if (this._position > this._length) {
@@ -322,7 +381,7 @@ $.MemoryStream.prototype.readUint8 = function() {
  * 現在のストリーム位置から16bit符号付き整数として読み込み、その分ストリーム位置を進める.
  */
 $.MemoryStream.prototype.readInt16 = function() {
-  var value = this._dataView.getInt16(this._position, _isLittleEndian);
+  var value = this._dataView.getInt16(this._position, this._isLittleEndian);
   
   this._position += 2;
   if (this._position > this._length) {
@@ -367,7 +426,7 @@ $.MemoryStream.prototype.readInt32 = function() {
  * 現在のストリーム位置から32bit符号無し整数として読み込み、その分ストリーム位置を進める.
  */
 $.MemoryStream.prototype.readUint32 = function() {
-  var value = this._dataView.getUint32(this._position, _isLittleEndian);
+  var value = this._dataView.getUint32(this._position, this._isLittleEndian);
   
   this._position += 4;
   if (this._position > this._length) {
@@ -382,7 +441,7 @@ $.MemoryStream.prototype.readUint32 = function() {
  * 現在のストリーム位置から32bit浮動小数点数として読み込み、その分ストリーム位置を進める.
  */
 $.MemoryStream.prototype.readFloat32 = function() {
-  var value = this._dataView.getFloat32(this._position, _isLittleEndian);
+  var value = this._dataView.getFloat32(this._position, this._isLittleEndian);
   
   this._position += 4;
   if (this._position > this._length) {
@@ -411,18 +470,20 @@ $.MemoryStream.prototype.readFloat32 = function() {
  * readStringAsUTF8
  * Overloads
  *   readStringAsUTF8()
- *   現在のストリーム位置から終端文字(\0)またはストリーム末尾までをUTF-8文字列として読み込む
- *
+ *   先頭32bitを文字列のバイト長としてUTF-8文字列を読み込み
+ *   JS文字列にデコードして返す.
+ *   読み込んだ分ストリーム位置を進める.
+ *   
  *   readStringAsUTF8(length)
- *   現在のストリーム位置からlength byte分UTF-8文字列として読み込む
+ *   現在のストリーム位置からlength byte分UTF-8文字列として読み込み
+ *   JS文字列にデコードして返す.
+ *   読み込んだ分ストリーム位置を進める.
  */
 $.MemoryStream.prototype.readStringAsUTF8 = function(length) {
-  if (length === undefined) {
-    return this.readStringAsUTF8NullTerminated();
+  if (typeof length === "undefined") {
+    length = this.readUint32();
   }
-  else {
-    return this.readStringAsUTF8WithLength(length);
-  }
+  return this.readStringAsUTF8WithLength(length);
 };
 $.MemoryStream.prototype.readStringAsUTF8NullTerminated = function(length) {
   var endPoint = this._position;
@@ -447,8 +508,11 @@ $.MemoryStream.prototype.readStringAsUTF8WithLength = function(length) {
   return str;
 };
 
+// --------------------------------------------------
+// Writing
+// --------------------------------------------------
+
 /**
- * writeArrayBuffer
  * 現在のストリーム位置から指定されたArrayBufferの内容を書き込み、その分ストリーム位置を進める.
  */
 $.MemoryStream.prototype.writeArrayBuffer = function(buffer) {
@@ -463,7 +527,6 @@ $.MemoryStream.prototype.writeArrayBuffer = function(buffer) {
 };
 
 /**
- * writeBytes
  * 現在のストリーム位置から指定されたTypedArrayの内容を書き込み、その分ストリーム位置をすすめる.
  * (この際のバイトオーダーはisLittleEndianプロパティではなくTypedArrayに依存する.)
  */
@@ -479,7 +542,6 @@ $.MemoryStream.prototype.writeBytes = function(bytes) {
 };
 
 /**
- * writeInt8
  * 現在のストリーム位置に8bit符号付き整数を書き込み、その分ストリーム位置をすすめる.
  */
 $.MemoryStream.prototype.writeInt8 = function(value) {
@@ -494,7 +556,6 @@ $.MemoryStream.prototype.writeInt8 = function(value) {
 };
 
 /**
- * writeUint8
  * 現在のストリーム位置に8bit符号無し整数を書き込み、その分ストリーム位置をすすめる.
  */
 $.MemoryStream.prototype.writeUint8 = function(value) {
@@ -509,7 +570,6 @@ $.MemoryStream.prototype.writeUint8 = function(value) {
 };
 
 /**
- * writeInt16 
  * 現在のストリーム位置に16bit符号付き整数を書き込み、その分ストリーム位置をすすめる.
  */
 $.MemoryStream.prototype.writeInt16 = function(value) {
@@ -554,7 +614,6 @@ $.MemoryStream.prototype.writeInt32 = function(value) {
 };
 
 /**
- * writeUint32 
  * 現在のストリーム位置に32bit符号無し整数を書き込み、その分ストリーム位置をすすめる.
  */
 $.MemoryStream.prototype.writeUint32 = function(value) {
@@ -569,7 +628,6 @@ $.MemoryStream.prototype.writeUint32 = function(value) {
 };
 
 /**
- * writeFloat32 
  * 現在のストリーム位置に32bit浮動小数点数を書き込み、その分ストリーム位置をすすめる.
  */
 $.MemoryStream.prototype.writeFloat32 = function(value) {
@@ -584,7 +642,6 @@ $.MemoryStream.prototype.writeFloat32 = function(value) {
 };
 
 /**
- * writeFloat64 
  * 現在のストリーム位置に64bit浮動小数点数を書き込み、その分ストリーム位置をすすめる.
  */
 $.MemoryStream.prototype.writeFloat64 = function(value) {
@@ -599,12 +656,18 @@ $.MemoryStream.prototype.writeFloat64 = function(value) {
 };
 
 /**
- * writeStringAsUTF8
  * 現在のストリーム位置に文字列をUTF-8エンコーディングで書き込み、その分ストリーム位置をすすめる.
- * @param {string} str 書き込む文字列
+ * @param {String} str 書き込む文字列
+ * @param {Boolean} writeLength
+ *   trueを渡すと32bit整数として文字列のバイト長を
+ *   文字列のバイナリデータの前に書き込む.
+ *   省略時はtrue.
  */
-$.MemoryStream.prototype.writeStringAsUTF8 = function(str) {
+$.MemoryStream.prototype.writeStringAsUTF8 = function(str, writeLength = true) {
   var utf8Bytes = $.createUTF8BytesFromString(str);
+  if (writeLength) {
+    this.writeUint32(utf8Bytes.byteLength);
+  }
   this.writeBytes(utf8Bytes);
 };
 
@@ -689,10 +752,20 @@ function unicodeToUTF8Bytes(code, result) {
 };
 
 /**
- * checkValidUTF8String
+ * 正しくエンコードされたUTF-8文字列であるか診断
+ * @param {Uint8Array} bytes UTF-8エンコードされたバイナリ
+ * @param {Object} result 診断結果を代入するオブジェクト. undefined可
+ * @return {Object}
+ *   引数 result をそのまま返す. result が undefined だった場合は
+ *   新規にオブジェクトを作成し、それに診断結果を代入して返す.
+ *   診断結果は以下のプロパティに代入される.
+ *   {
+ *     isValid: (Boolean) 正しくエンコードされていればtrue
+ *     hasBOM: (Boolean) BOMを持っていればtrue
+ *   }
  */
 function checkValidUTF8String(bytes, result) {
-  if (!result) {
+  if (typeof result === "undefined") {
     result = {};
   }
   
@@ -941,13 +1014,13 @@ $.decodeBase64 = function(base64Str) {
 };
 
 /**
- * encodeBase64
+ * encodeToBase64
  * Uint8ArrayによるバイナリをBase64エンコードする.
  * @param {Uint8Array} bytes エンコードするバイナリ
  * @param {bool} isUrlEncode Base64 URL形式にエンコードするか(false)
  * @return {string} Base64エンコードされたテキスト 
  */
-$.encodeBase64 = function(bytes, isUrlEncode) {
+$.encodeToBase64 = function(bytes, isUrlEncode) {
   var table = (isUrlEncode === true) ? $.BASE64_URL_TABLE : $.BASE64_TABLE;
   var base64Str = "";
   var chunkCount = Math.floor(bytes.length / 3);

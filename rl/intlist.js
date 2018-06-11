@@ -124,7 +124,6 @@ $.IntList.prototype.setUnsafe = function(index, value) {
 };
 
 /**
- * add
  * リスト末尾へ値を追加する.
  * @param {int} value
  */
@@ -137,7 +136,7 @@ $.IntList.prototype.add = function(value) {
 };
 
 /**
- * push
+ * リスト末尾へ値を追加し、追加後のアイテム数を返す.
  */
 $.IntList.prototype.push = function(value) {
     if (this._count == this._capacity) {
@@ -179,7 +178,7 @@ $.IntList.prototype.insert = function(index, value) {
         throw new Error("index is less than 0.");
     }
     else if (index > this.count){
-        throw new Error("index is greater than count.");
+        throw new Error("index is greater than a count of the list.");
     }
     
     if (this._count == this._capacity) {
@@ -240,7 +239,7 @@ $.IntList.prototype.pop = function() {
 
 /**
  * remove
- * 指定した値を先頭から検索し、値が等しいアイテムを1つ削除する.
+ * 先頭から検索し、指定した値に等しいアイテムを1つ削除する.
  * @param {int} value
  * @returns {Boolean} 指定した値が存在していたらtrue
  */
@@ -263,7 +262,7 @@ $.IntList.prototype.remove = function(value) {
 
 /**
  * removeFast
- * 指定した値を先頭から検索し、値が等しいアイテムを1つ削除する.
+ * 先頭から検索し、指定した値に等しいアイテムを1つ削除する.
  * removeメソッドに比べてリスト内の順序が崩壊する代わりに高速に動作する.
  * @param {int} value
  * @returns {Boolean} 指定した値が存在していたらtrue
@@ -272,7 +271,7 @@ $.IntList.prototype.removeFast = function(value) {
     var i, len = this._count - 1;
     var array = this._array;
     for(i = 0; i < len; i++) {
-        //found
+        //　ヒットしたら
         if (array[i] == value) {
             this._count--;
             array[i] = array[this._count];

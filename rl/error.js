@@ -1,4 +1,7 @@
 SL.namespace("RL");
+
+SL.import("debug.js");
+
 SL.code(function($ = RL) {
 
 $.dumpError = function(err) {
@@ -16,7 +19,7 @@ $.dumpError = function(err) {
     return err.message + "\n" + err.stack;
   }
   // Other
-  return err.toString();
+  return RL.dump(err);
 }
 
 

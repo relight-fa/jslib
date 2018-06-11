@@ -622,6 +622,7 @@ $.Table = class self {
    * @param {String} str パースするCSV文字列
    */
   static fromCSVString(csvStr) {
+    var i;
     var table = new self();
     var record;
     
@@ -660,13 +661,19 @@ $.Table = class self {
     
     while(iterator.next()) {
       if (iterator.newLine) {
+        for (i = columnIndex; i < table.columns.length; i++) {
+          record[table.columns[i]] = "";
+        }
         table.addRecord(record);
+        
         record = {};
         columnIndex = 0;
+        
       }
       else {
         if (columnIndex >= table.columns.length) {
-          throw Error("too many columns");
+          var pos = iterator.getCurrentPosition();
+          throw Error("too many columns " + pos.line + "[" + pos.char + "]");
         }
         record[table.columns[columnIndex]] = iterator.value;
         columnIndex++;
@@ -737,6 +744,21 @@ $.Table = class self {
   /* ------------------------------------------------------------
    * Other
    * ------------------------------------------------------------ */
+  combine(table) {
+    var i, len;
+    for (i = 0, len = table._columns.length; i < len; i++) {
+      var column = table._columns[i];
+      if (this._columns.indexOf(column) == -1) {
+        this._columns.push(column);
+      }
+    }
+    
+    var record;
+    for (var i = 0, len = table._records.length; i < len; i++) {
+      this._records.push(table._records[i]);
+    }
+  }
+  
   /**
    * 2つのテーブルを結合して新規のテーブルを作成する.
    */
@@ -785,7 +807,25 @@ var CSVReadIterator = class {
     this.newLine = false;
     this.end = false;
   }
-
+  
+  /**
+   * 現在の読み取り位置を返す
+   */
+  getCurrentPosition() {
+    var i;
+    var row = 1, col = 1;
+    for (i = 0; i < this.position; i++) {
+      var c = this.data.charAt(i);
+      if (c === "\n") {
+        row++;
+        col = 1;
+      }
+    }
+    
+    return {line: row, char: col};
+  }
+  
+  
   /**
    * 次の構文要素を読み取る
    *

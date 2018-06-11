@@ -1,4 +1,9 @@
 <?php
+/*
+ * 外部URLへのHTTPリクエスト
+ * 
+ */
+
 set_time_limit(0);
 
 /**
@@ -15,7 +20,7 @@ set_time_limit(0);
  *     レスポンスをテキストとして受け取るか
  *     trueの場合、内容をUTF-8にエンコードして返す
  */
-function request($method, $url, $header = null, $body = null, $getAsText = false) {
+function request($method, $url, $header = null, $body = null, $getAsText = true) {
   // リクエストボディが配列 or オブジェクトならば
   // クエリ文字列化
   if (is_array($body) || is_object($body)) {
@@ -24,7 +29,7 @@ function request($method, $url, $header = null, $body = null, $getAsText = false
   
   // メソッド名を小文字化
   if (is_string($method)) {
-    $method = strtolower($method);
+    $method = strtoupper($method);
   }
 
   $ch = curl_init();
@@ -34,17 +39,21 @@ function request($method, $url, $header = null, $body = null, $getAsText = false
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
   // HTTPメソッドごとの設定
   switch ($method) {
-    case "post": {
+    case "POST": {
       curl_setopt($ch, CURLOPT_POST, 1);
-      curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+      if ($body !== null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+      }
       break;
     }
-    case "put": {
+    case "PUT": {
       curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
-      curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+      if ($body !== null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+      }
       break;
     }
-    case "delete": {
+    case "DELETE": {
       curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
       break;
     }
@@ -69,6 +78,9 @@ function request($method, $url, $header = null, $body = null, $getAsText = false
     }
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headerArray);
   }
+  // Cookie
+  //curl_setopt($ch, CURLOPT_COOKIEFILE, "");
+  curl_setopt($ch, CURLOPT_COOKIEJAR, "");
   // HTTPリクエスト実行
   $curlResult =  curl_exec($ch);
 
@@ -84,6 +96,7 @@ function request($method, $url, $header = null, $body = null, $getAsText = false
     return array("success" => false, "errorMessage" => $errorMessage);
   }
   
+  $url = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
   $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
   $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
   $request = curl_getinfo($ch, CURLINFO_HEADER_OUT);
@@ -91,19 +104,24 @@ function request($method, $url, $header = null, $body = null, $getAsText = false
   $header = substr($curlResult, 0, $headerSize);
   $body = substr($curlResult, $headerSize);
   
+  $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+  
   // テキストとして取得する場合はUTF-8にエンコードする
+  /*
   if($getAsText) {
-    $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
     // charsetを取得してUTF-8へエンコード
     if($contentType !== NULL && preg_match("/charset=([-_a-zA-Z0-9]*)/", $contentType, $matches)) {
       $charset = $matches[1];
       $body = iconv($charset, "utf-8//IGNORE", $body);
     }
   }
+  */
   
   curl_close($ch);
   return array(
-    "success" => "true",
+    "success" => true,
+    "url" => $url,
+    "contentType" => $contentType,
     "headerSize" => $headerSize,
     "status" => $status,
     "header" => $header,
@@ -112,41 +130,36 @@ function request($method, $url, $header = null, $body = null, $getAsText = false
   );
 }
 
-/*
- * curlを用いたHTTP GET
- */
-function curl_get($url, $header, $body) {
-  return request("get", $url, $header, $body);
-  /*
-  $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
-  $content = substr($curlResult, $headerSize);
-  // get charset
-  if($contentType !== NULL && preg_match("/charset=([-_a-zA-Z0-9]*)/", $contentType, $matches)) {
-    $charset = $matches[1];
-    $content = iconv($charset, "utf-8//IGNORE", $content);
+function outResult($resultArray) {
+  $json = json_encode($resultArray);
+  
+  $err = json_last_error();
+  if($err !== JSON_ERROR_NONE) {
+    outResult(array(
+      "success" => false,
+      "errorMessage" => "failed to encode HTTP result to JSON.",
+      "jsonError" => json_last_error_msg()
+    ));
+    exit;
   }
   
-  return array("headerSize" => $headerSize, "header" => $header, "content" => $content);
-  */
-}
-
-/*
- * curlを用いたHTTP POST
- */
-function curl_post($url, $header, $body) {
-  return request("post", $url, $header, $body);
+  header("X-RLHTTP-Result: ".rawurlencode($json));
 }
 
 /* ==================================================
  * Main
  * ================================================== */
-header("Content-type: application/json;");
 $url = (isset($_GET["u"]) ? $_GET["u"] : "");
-$method = (isset($_GET["m"]) ? $_GET["m"] : "get");
+$method = (isset($_GET["m"]) ? $_GET["m"] : "GET");
 $header = (isset($_GET["h"]) ? $_GET["h"] : null);
-$method = strtolower($method);
+
+$method = strtoupper($method);
+
 if($url === "") {
-  echo "{}";
+  outResult(array(
+    "success" => false,
+    "errorMessage" => "URL parameter is empty."
+  ));
   exit;
 }
 
@@ -157,35 +170,38 @@ if($header !== null) {
 $startTime = time();
 
 switch($method) {
-  case "p" :
-  case "post" :
+  case "P" :
+  case "POST" :
     $body = file_get_contents("php://input");
-    $httpResult = request("post", $url, $header, $body);
+    $httpResult = request("POST", $url, $header, $body);
     break;
-  case "put" :
+  case "PUT" :
     $body = file_get_contents("php://input");
-    $httpResult = request("put", $url, $header, $body);
+    $httpResult = request("PUT", $url, $header, $body);
+    break;
+  case "DELETE" :
+    $httpResult = request("DELETE", $url, $header);
     break;
   default:
-    $httpResult = request("get", $url, $header);
+    $httpResult = request("GET", $url, $header);
+    break;
 }
 
 $finishTime = time();
 
-$httpResult["request"] = $header;
 $httpResult["time"] = $finishTime - $startTime;
 
-header("Content-type: application/json");
-
-$json = json_encode($httpResult);
-$err = json_last_error();
-if($err !== JSON_ERROR_NONE) {
-  echo '{"success":false,"errorMessage":"failed to encode HTTP result."}';
+if ($httpResult["success"] === false) {
+  outResult($httpResult);
   exit;
 }
 
-echo $json;
+$body = $httpResult["body"];
+unset($httpResult["body"]);
 
+header("Content-type: ".$httpResult["contentType"]);
 
+outResult($httpResult);
+echo $body;
 
 

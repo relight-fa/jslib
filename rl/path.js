@@ -1,7 +1,7 @@
 /*
   path.js
   
-  URI, パス関連操作.
+  URL, パス関連操作.
   以下の表記のパスに対応する.
   (1) 絶対パス
     http://www.abc.def/gh/ij/kl
@@ -21,8 +21,10 @@ SL.code(function($ = RL) {
 /**
  * origin上でのrelativePathの参照先を求める.
  * @param {String} origin 基準となるパス
- * @param {String} relativePath
- * @param {String} origin上でのrelativePathの参照先
+ * @param {String} relativePath originを基準とした相対パス.
+ * @param {String}
+ *     origin上でのrelativePathの参照先.
+ *     relativePathが絶対パスならばその値をそのまま返す.
  */
 $.getPathFromRelativePath = function(origin, relativePath) {
   relativeInfo = $.parseURI(relativePath);
@@ -33,12 +35,12 @@ $.getPathFromRelativePath = function(origin, relativePath) {
   originInfo = $.parseURI(origin);
   
   if (relativePath.charAt(0) === "/") {
-    // re = "//..."
+    // relativePath == "//..."
     if (relativePath.charAt(1) === "/") {
       originInfo.domain = relativeInfo.domain;
       originInfo.path = relativeInfo.path;
     }
-    // re = "/..."
+    // relativePath = "/..."
     else {
       originInfo.path = relativeInfo.path;
     }

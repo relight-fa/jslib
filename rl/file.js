@@ -83,13 +83,10 @@ $.readFromBlob = function(blob, type) {
     case "arraybuffer":
     case "binary":
       return $._readFromBlobAsBinary(blob);
-      break;
     case "json":
       return $._readFromBlobAsJSON(blob);
-      break;
     default:
       return $._readFromBlobAsText(blob);
-      break;
   }
 };
 
@@ -168,6 +165,10 @@ $.readFromPath = function(path, type) {
   xhr.open("GET" , path, false);
   xhr.send(null);
   
+  if (xhr.status !== 200) {
+    return null;
+  }
+  
   return xhr.response;
 };
 
@@ -189,13 +190,10 @@ $.Async.readFromBlob = function(blob, type) {
     case "arraybuffer":
     case "binary":
       return $.Async._readFromBlobAsBinary(blob);
-      break;
     case "json":
       return $.Async._readFromBlobAsJSON(blob);
-      break;
     default :
       return $.Async._readFromBlobAsText(blob);
-      break;
   }
 };
 // テキストとしてBlob読み込み
@@ -276,7 +274,7 @@ $.Async.readFromPath = function(path, type) {
     var xhr = new XMLHttpRequest();
     xhr.responseType = responseType;
     xhr.onload = function(e) {
-      resolve(xhr.response);
+      console.log(xhr.status);
     };
     
     xhr.onerror = function(e) {

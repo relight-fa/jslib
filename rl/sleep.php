@@ -7,7 +7,7 @@ if (! isset($_GET["t"])) {
 }
 $waitTime = 1000 * ((float)($_GET["t"]) - (microtime(true) * 1000)) ;
 
-if ($waitTime > 10000000) { // 10 seconds
+if ($waitTime > 10000000) { // 10 seconds = 10 * 1000 * 1000 usec
   exit;
 }
 

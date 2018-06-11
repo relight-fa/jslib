@@ -8,9 +8,11 @@
  * サーバーサイドスクリプトは以下の仕様を満たす.
  * [Query Parameters]
  *   m: HTTP通信メソッド(GET, POST, PUT, DELETE). 大文字小文字を問わない
- *   u: 通信先URL
- *   h: リクエストヘッダ
+ *   u: 
+ *   h: リクエストヘッダ通信先URL
  *      ヘッダパラメータ名をキーとするオブジェクトをJSON形式で渡す.
+ *   t: レスポンスの受信形式.
+ *      テキストとして受け取る場合はUTF-8にエンコードして返す。
  * [Request Body]
  *   通信対象URLへ渡すリクエストボディ
  * [Response Header]
@@ -30,10 +32,12 @@ SL.namespace("RL");
 SL.namespace("RL.HTTP");
 SL.namespace("RL.HTTP.Async");
 
-SL.code(function(SL_DIRECTORY, $ = RL.HTTP) {
+SL.import("cookie.js");
+
+SL.code({environments: ["WORKER"], constants: ["DIRECTORY"]},function($ = RL.HTTP) {
   
 $._serverHTTPModuleEnabled = true;
-$._serverHTTPModulePath = SL_DIRECTORY + "httpmodule.php";
+$._serverHTTPModulePath = SL.DIRECTORY + "httpmodule.php";
 
 /**
  * HTTP通信にサーバーサイドスクリプトを利用するか
@@ -67,7 +71,13 @@ $.setServerHTTPModulePath = function(path) {
  *                             オブジェクトのキーをパラメータ名とする.
  *   header (Object, optional): リクエストヘッダを表すオブジェクト.
  *                              オブジェクトのキーをパラメータ名とする.
+ *   cookieContext (RL.CookieContext, optional): HTTP通信に用いるCookie Context.
  *   body (String, optional): POST時のリクエストボディ
+ *   type {String, optional}: データの取得形式. 省略時は text
+ *                            text: 文字列
+ *                            arraybuffer: ArrayBufferオブジェクト
+ *                            json: JSONエンコードされた文字列を解析して作成されたオブジェクト
+ *                            blob: Blob オブジェクト
  * }
  * 
  * @returns {Object} 以下の形式のオブジェクト
@@ -93,24 +103,26 @@ $.request = function(params) {
 /**
  * GETメソッドによるHTTP通信
  */
-$.get = function(url, query, header) {
+$.get = function(url, query, header, cookieContext) {
   return $.request({
     method: "GET",
     url: url,
     query: query,
-    header: header
+    header: header,
+    cookieContext: cookieContext
   });
 };
 
 /**
  * POSTメソッドによるHTTP通信
  */
-$.post = function(url, query, header, body) {
+$.post = function(url, query, header, body, cookieContext) {
   return $.request({
     method: "POST",
     url: url,
     query: query,
     header: header,
+    cookieContext: cookieContext,
     body: body
   });
 };
@@ -118,12 +130,13 @@ $.post = function(url, query, header, body) {
 /**
  * PUTメソッドによるHTTP通信
  */
-$.put = function(url, query, header, body) {
+$.put = function(url, query, header, body, cookieContext) {
   return $.request({
     method: "PUT",
     url: url,
     query: query,
     header: header,
+    cookieContext: cookieContext,
     body: body
   });
 };
@@ -131,12 +144,13 @@ $.put = function(url, query, header, body) {
 /**
  * DELETEメソッドによるHTTP通信
  */
-$.delete = function(url, query, header, body) {
+$.delete = function(url, query, header, body, cookieContext) {
   return $.request({
     method: "DELETE",
     url: url,
     query: query,
-    header: header
+    header: header,
+    cookieContext: cookieContext
   });
 };
 
@@ -150,7 +164,8 @@ $.delete = function(url, query, header, body) {
  *                             オブジェクトのキーをパラメータ名とする.
  *   header (Object, optional): リクエストヘッダを表すオブジェクト.
  *                              オブジェクトのキーをパラメータ名とする.
- *   body (String, optional): リクエストボディ
+ *   cookieContext (RL.CookieContext, optional): HTTP通信に用いるCookie Context.
+ *   body (String | Object | Blob, optional): リクエストボディ
  * }
  * @returns {Object} 以下の形式のオブジェクト
  * {
@@ -161,7 +176,7 @@ $.delete = function(url, query, header, body) {
  *   body (String): レスポンスボディ
  * }
  */
-$._requestWithServerModule = function(params) {
+$._requestWithServerModule = function(params, async) {
   var url = params.url;
   // メソッド名の正規化
   var method = params.method || "GET";
@@ -186,13 +201,42 @@ $._requestWithServerModule = function(params) {
   // モジュール呼び出しURL作成
   url = $._serverHTTPModulePath + "?m=" + encodeURIComponent(method) + "&u=" + encodeURIComponent(url);
   // ヘッダ処理
+  var header;
   if (params.header) {
-    url += "&h=" + encodeURIComponent(JSON.stringify(params.header));
+    header = params.header
+  }
+  if (params.cookieContext) {
+    header = header || {};
+    if (header.Cookie) {
+     header.Cookie += "; " + params.cookieContext.makeRequestHeader(params.url);
+    }
+    else {
+      header.Cookie = params.cookieContext.makeRequestHeader(params.url);
+    }
+  }
+  if (header) {
+    url += "&h=" + encodeURIComponent(JSON.stringify(header));
+  }
+  // データタイプ
+  var type;
+  switch (params.type) {
+    case "json":
+    case "arraybuffer":
+    case "blob":
+      type = params.type;
+      break;
+    default:
+      type = "text";
   }
   
+  // データボディ
+  /*
+  if (typeof params.body === "object") {
+  }
+  */
+  
   var xhr = new XMLHttpRequest();
-  var result = {};
-  xhr.responseType = "text";
+  xhr.responseType = type;
   
   // send request
   if (method == "POST" || method == "PUT") {
@@ -204,36 +248,39 @@ $._requestWithServerModule = function(params) {
     xhr.send(params.body);
   }
   
+  if (xhr.status !== 200) {
+    return {
+      success: false,
+      errorMessage: "Cannot connect to the HTTP module. status: " + xhr.status,
+    };
+  }
+  
+  var httpResult;
   var response;
   try {
-    response = JSON.parse(xhr.response);
+    httpResult = xhr.getResponseHeader("X-RLHTTP-Result");
+    httpResult = JSON.parse(decodeURIComponent(httpResult));
   }
   catch (e) {
     console.log(e);
-    console.log(xhr.response);
+    console.log(xhr.getResponseHeader("X-RLHTTP-Result"));
     throw(e);
   }
+  response = xhr.response;
+  
   // success
-  if (response !== null && xhr.status === 200 && response.header) {
-    result.success = true;
-    result.body = response.body;
-    result.header = response.header;
+  if (httpResult.success) {
+    httpResult.body = response;
     
-    var responseStatus = getHTTPStatusFromResponseHeaders(result.header);
-    
-    result.status = responseStatus.status;
-    result.statusText = responseStatus.statusText;
+    if (params.cookieContext) {
+      params.cookieContext.manageResponseHeader(params.url, httpResult.header);
+    }
   }
   // failed
   else {
-    result.success = false;
-    result.body = "";
-    result.header = null;
-    result.status = 0;
-    result.statusText = "";
+    httpResult.body = null;
   }
-  
-  return result;
+  return httpResult;
 }
 
 /**
@@ -246,10 +293,11 @@ $._requestWithServerModule = function(params) {
  *                     オブジェクトのキーをパラメータ名とする.
  *   header: (optional) リクエストヘッダを表すオブジェクト.
  *                      オブジェクトのキーをパラメータ名とする.
+ *   cookieContext (RL.CookieContext, optional): HTTP通信に用いるCookie Context.
  *   body: (optional) POST時のリクエストボディ
  * }
  */
-$._requestWithXMLHttpRequest = function(params) {
+$._requestWithXMLHttpRequest = function(params, async) {
   // メソッド名の正規化
   var method = params.method || "GET";
   method = method.toUpperCase();
@@ -421,7 +469,6 @@ $.Async._requestWithServerModule = function(params) {
     
     // モジュール呼び出しURL作成
     url = $._serverHTTPModulePath + "?m=" + encodeURIComponent(method) + "&u=" + encodeURIComponent(url);
-    console.log(url);
     // ヘッダ処理
     if (params.header) {
       url += "&h=" + encodeURIComponent(JSON.stringify(params.header));

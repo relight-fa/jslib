@@ -1,5 +1,5 @@
 /**
- * async_script.js
+ * exec.js
  * 
  * 外部Workerファイルを実行する.
  * Workerファイルに記述されたmain関数を実行し、その結果を取得する
@@ -7,8 +7,8 @@
  * 
  * Workerファイル側 (main.js)
  * --------------------------------------------------
- * importScripts("/js/exec.js");
- * SL.import("/js/rl/async_script.js");
+ * importScripts("/js/sl.js");
+ * SL.import("/js/rl/exec.js");
  * 
  * function main(arg) {
  *   return arg + " World!";
@@ -19,7 +19,7 @@
  * --------------------------------------------------
  * SL.import("/js/rl/exec.js");
  * SL.ready(function() {
- *   RL.Async.execute("main.js", "Hello")
+ *   RL.Async.exec("main.js", "Hello")
  *   .then(function(result) {
  *     console.log(result); // Hello World!
  *   });
@@ -29,7 +29,7 @@
 SL.import("error.js");
 
 SL.namespace("RL.Async");
-SL.code(function($ = RL, SL_GLOBAL) {
+SL.code(function($ = RL) {
 
 /**
  * 指定した外部Workerファイルの実行.
@@ -49,16 +49,33 @@ $.Async.exec = function(path, arg, delegate) {
       path += "?_sl_t_" + Date.now();
     }
     
+    console.log(path);
+    
     // create worker
     var worker;
     worker = new Worker(path);
+    console.log(worker);
     
     worker.addEventListener("error", function(e) {
       console.log(e);
-      reject(new Error(
-        "failed to create a Worker from: " + originalPath + "\n" +
-        e.message + "\n" +
-        e.filename + ":" + e.lineno + "[" + e.colno + "]"));
+      var errorObj;
+      // スクリプトエラー
+      if (typeof e.message !== "undefined") {
+        errorObj = {
+          type: "script error",
+          message: "A script error occurred in: " + originalPath + "\n" +
+              e.message + "\n" +
+              e.filename + ":" + e.lineno + "[" + e.colno + "]"
+        }
+      }
+      // ファイル読み込みエラー
+      else {
+        errorObj = {
+          type: "load error",
+          message: "Failed to load a Worker from: " + originalPath
+        }
+      }
+      reject(errorObj);
       worker.terminate();
     }, false);
     
@@ -66,12 +83,20 @@ $.Async.exec = function(path, arg, delegate) {
     worker.onmessage = function(e) {
       var data = e.data;
       switch(data.type) {
+        case "beginExec": {
+          clearTimeout(beginExecTimeout);
+          break;
+        }
         case "result": {
           resolve(data.result);
           break;
         }
         case "error": {
-          reject(new Error(data.errorMessage));
+          console.log(e);
+          reject({
+            type: "exec error",
+            message: data.errorMessage
+          });
           break;
         }
         case "progress": {
@@ -89,44 +114,60 @@ $.Async.exec = function(path, arg, delegate) {
       }
     };
     
+    // Execコマンド受信待機のタイムアウト処理
+    var beginExecTimeout = setTimeout(function() {
+      console.log("exec timeout");
+      reject({
+        type: "exec timeout",
+        message: "Worker won't begin"
+      });
+      worker.terminate();
+    }, 5000);
+    
     worker.postMessage({
-      type: "execute",
+      type: "exec",
       arg: arg,
     });
   });
 };
 
-/* ==================================================
- * Worker
- * ================================================== */
-if(SL_GLOBAL === self) {
+});
+
+// ==================================================
+// Worker
+// ==================================================
+SL.code("WORKER", function($ = RL){
   self.onmessage = function(e) {
     let data = e.data;
-    if(data.type === "execute") {
-      try {
-        let result = main.apply(null, data.arg);
+    switch (data.type) {
+      case "exec": {
+        // execコマンドの受信完了をドキュメント側に通知
         self.postMessage({
-          "type": "result",
-          "result": result
+          "type": "beginExec"
         });
-        self.close();
-      }
-      catch (err) {
-        console.log(err);
-        let errorMessage = RL.dumpError(err);
-        self.postMessage({
-          "type": "error",
-          "errorMessage": errorMessage,
-        });
-        self.close();
+        try {
+          let result = main.apply(null, data.arg);
+          self.postMessage({
+            "type": "result",
+            "result": result
+          });
+          self.close();
+        }
+        catch (err) {
+          console.log(err);
+          let errorMessage = RL.dumpError(err);
+          self.postMessage({
+            "type": "error",
+            "errorMessage": errorMessage,
+          });
+          self.close();
+        }
+        break;
       }
     }
   };
-  
   self.progress = function() {
   };
-  
-}
 
 }); // End SL.code;
 

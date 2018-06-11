@@ -89,12 +89,7 @@ $.rtrim = function(str, mask) {
  * 文字列が指定した文字列で始まるか
  */
 $.startsWith = function(src, search) {
-  if ( src.substr(0, search.length) === search) {
-    return true;
-  }
-  else {
-    return false;
-  }
+  return src.substr(0, search.length) === search;
 };
 
 /**
@@ -102,12 +97,7 @@ $.startsWith = function(src, search) {
  */
 $.endsWith = function(src, search) {
   var len = search.length;
-  if ( src.substr(src.length - len) === search) {
-    return true;
-  }
-  else {
-    return false;
-  }
+  return src.substr(src.length - len) === search;
 };
 
 /**
